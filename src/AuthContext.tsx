@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import { handleFirestoreError, OperationType } from './lib/firestoreErrorHandler';
 
 interface AuthContextType {
   user: User | null;
@@ -26,20 +27,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
-        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        if (userDoc.exists()) {
-          setProfile(userDoc.data());
-        } else {
-          // Create default profile for new users
-          const newProfile = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName,
-            role: firebaseUser.email === 'santiago02061992@gmail.com' ? 'admin' : 'staff',
-            createdAt: new Date().toISOString(),
-          };
-          await setDoc(doc(db, 'users', firebaseUser.uid), newProfile);
-          setProfile(newProfile);
+        try {
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            // Ensure specific email always has admin role
+            if (firebaseUser.email === 'santiago02061992@gmail.com' && data.role !== 'admin') {
+              const updatedProfile = { ...data, role: 'admin' };
+              await setDoc(doc(db, 'users', firebaseUser.uid), updatedProfile);
+              setProfile(updatedProfile);
+            } else {
+              setProfile(data);
+            }
+          } else {
+            // Create default profile for new users
+            const newProfile = {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              displayName: firebaseUser.displayName,
+              role: firebaseUser.email === 'santiago02061992@gmail.com' ? 'admin' : 'staff',
+              createdAt: new Date().toISOString(),
+            };
+            await setDoc(doc(db, 'users', firebaseUser.uid), newProfile);
+            setProfile(newProfile);
+          }
+        } catch (error) {
+          handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
         }
       } else {
         setProfile(null);

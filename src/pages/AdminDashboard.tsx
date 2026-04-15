@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { Plus, Trash2, Users, ClipboardList, Settings, ChevronRight, Save, LayoutGrid, LogOut, Eye, X, CheckCircle2, Home, RefreshCw } from 'lucide-react';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { Plus, Trash2, Users, ClipboardList, Settings, ChevronRight, Save, LayoutGrid, LogOut, Eye, X, CheckCircle2, Home, RefreshCw, Camera } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { signOut } from 'firebase/auth';
 
@@ -27,14 +28,30 @@ const PreviewModal = ({ isOpen, onClose, checklist }: { isOpen: boolean, onClose
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           <header className="bg-white p-5 rounded-2xl border border-bento-border shadow-sm">
-            <div className="flex justify-between items-start">
-              <div>
-                <h1 className="text-lg font-bold text-bento-ink">{checklist.title || 'Sem Título'}</h1>
-                <p className="text-xs text-bento-muted">Segunda-feira, 14 de Abril</p>
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex gap-2">
+                  <div className="p-2 bg-bento-bg rounded-xl text-bento-muted border border-bento-border">
+                    <Home size={16} />
+                  </div>
+                  <div className="p-2 bg-bento-bg rounded-xl text-bento-muted border border-bento-border">
+                    <RefreshCw size={16} />
+                  </div>
+                </div>
+                <div>
+                  <h1 className="text-base font-bold text-bento-ink leading-tight">{checklist.title || 'Sem Título'}</h1>
+                  <p className="text-[10px] text-bento-muted font-medium">Segunda-feira, 14 de Abril</p>
+                </div>
               </div>
-              <span className="bg-[#FFF7ED] text-bento-accent px-3 py-1 rounded-full text-[10px] font-bold uppercase">
-                Praça: {checklist.praca || 'N/A'}
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="bg-[#FFF7ED] text-bento-accent px-3 py-1 rounded-full text-[10px] font-bold uppercase">
+                  Praça: {checklist.praca || 'N/A'}
+                </span>
+                <div className="bg-red-50 text-red-500 px-3 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 border border-red-100">
+                  <LogOut size={10} />
+                  Sair
+                </div>
+              </div>
             </div>
           </header>
 
@@ -58,6 +75,17 @@ const PreviewModal = ({ isOpen, onClose, checklist }: { isOpen: boolean, onClose
                     <div className="flex items-center gap-2">
                       <div className="w-16 h-8 bg-bento-bg border border-bento-border rounded-lg" />
                       <span className="text-xs font-bold text-bento-muted">°C</span>
+                    </div>
+                  )}
+                  {item.type === 'time' && (
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 h-8 bg-bento-bg border border-bento-border rounded-lg" />
+                    </div>
+                  )}
+                  {item.requiredPhoto && (
+                    <div className="mt-3 p-3 border-2 border-dashed border-bento-border rounded-xl flex flex-col items-center gap-1 opacity-50">
+                      <Camera size={16} className="text-bento-muted" />
+                      <span className="text-[10px] font-bold text-bento-muted uppercase tracking-wider">Capturar Foto</span>
                     </div>
                   )}
                 </div>
@@ -95,12 +123,20 @@ export const AdminDashboard = () => {
   useEffect(() => {
     const unsubTemplates = onSnapshot(collection(db, 'checklistTemplates'), (snap) => {
       setTemplates(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'checklistTemplates');
     });
+
     const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
       setUsers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'users');
     });
+
     const unsubSubmissions = onSnapshot(query(collection(db, 'submissions'), orderBy('timestamp', 'desc')), (snap) => {
       setSubmissions(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'submissions');
     });
 
     return () => {
@@ -111,24 +147,54 @@ export const AdminDashboard = () => {
   }, []);
 
   const handleCreateChecklist = async () => {
-    await addDoc(collection(db, 'checklistTemplates'), {
-      ...newChecklist,
-      active: true,
-      createdAt: new Date().toISOString()
-    });
-    setIsCreating(false);
-    setNewChecklist({ title: '', praca: '', frequency: 'daily', items: [{ id: '1', text: '', type: 'checkbox', requiredPhoto: false }] });
+    if (!newChecklist.title || !newChecklist.praca) return;
+    try {
+      await addDoc(collection(db, 'checklistTemplates'), {
+        ...newChecklist,
+        active: true,
+        createdAt: new Date().toISOString()
+      });
+      setIsCreating(false);
+      setNewChecklist({ title: '', praca: '', frequency: 'daily', items: [{ id: '1', text: '', type: 'checkbox', requiredPhoto: false }] });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'checklistTemplates');
+    }
   };
 
   const assignChecklist = async (userId: string, templateId: string) => {
-    await updateDoc(doc(db, 'users', userId), { assignedChecklistId: templateId });
+    try {
+      await updateDoc(doc(db, 'users', userId), { assignedChecklistId: templateId });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
+    }
   };
 
   return (
     <div className="min-h-screen bg-bento-bg p-6">
       <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-[240px_1fr_280px] gap-4 h-full">
+        {/* Mobile Header */}
+        <div className="lg:hidden bento-card flex items-center justify-between mb-4 bg-bento-ink text-white border-none py-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-bento-accent flex items-center justify-center font-bold text-white text-xs">
+              GC
+            </div>
+            <span className="font-bold text-sm">GastroCheck</span>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => window.location.href = '/'} className="p-2 bg-white/10 rounded-xl hover:bg-white/20 transition-colors">
+              <Home size={18} />
+            </button>
+            <button onClick={() => window.location.reload()} className="p-2 bg-white/10 rounded-xl hover:bg-white/20 transition-colors">
+              <RefreshCw size={18} />
+            </button>
+            <button onClick={() => signOut(auth)} className="p-2 bg-red-500/20 text-red-400 rounded-xl hover:bg-red-500/30 transition-colors">
+              <LogOut size={18} />
+            </button>
+          </div>
+        </div>
+
         {/* Sidebar */}
-        <aside className="bento-card bento-sidebar lg:row-span-6">
+        <aside className="hidden lg:flex bento-card bento-sidebar lg:row-span-6">
           <div className="flex items-center gap-3 mb-8">
             <div className="w-10 h-10 rounded-full bg-bento-accent flex items-center justify-center font-bold text-white">
               GC
@@ -158,19 +224,22 @@ export const AdminDashboard = () => {
               onClick={() => setActiveTab('checklists')}
               className={`bento-nav-link text-left ${activeTab === 'checklists' ? 'bento-nav-link-active' : ''}`}
             >
-              Checklists
+              <ClipboardList size={18} className="inline mr-2" />
+              Templates
             </button>
             <button 
               onClick={() => setActiveTab('users')}
               className={`bento-nav-link text-left ${activeTab === 'users' ? 'bento-nav-link-active' : ''}`}
             >
+              <Users size={18} className="inline mr-2" />
               Usuários
             </button>
             <button 
               onClick={() => setActiveTab('history')}
               className={`bento-nav-link text-left ${activeTab === 'history' ? 'bento-nav-link-active' : ''}`}
             >
-              Histórico
+              <LayoutGrid size={18} className="inline mr-2" />
+              Submissões
             </button>
           </nav>
 
@@ -247,14 +316,35 @@ export const AdminDashboard = () => {
                         >
                           <option value="checkbox">Check</option>
                           <option value="temperature">Temp</option>
+                          <option value="time">Hora</option>
                         </select>
+                        <button
+                          onClick={() => {
+                            const items = [...newChecklist.items];
+                            items[index].requiredPhoto = !items[index].requiredPhoto;
+                            setNewChecklist({...newChecklist, items});
+                          }}
+                          className={`p-2 rounded-lg border text-xs font-bold transition-colors ${item.requiredPhoto ? 'bg-bento-accent text-white border-bento-accent' : 'bg-bento-bg text-bento-muted border-bento-border'}`}
+                        >
+                          {item.requiredPhoto ? 'Com Foto' : 'Sem Foto'}
+                        </button>
+                        <button 
+                          onClick={() => {
+                            const items = newChecklist.items.filter((_, i) => i !== index);
+                            setNewChecklist({...newChecklist, items});
+                          }}
+                          className="p-2 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={16} />
+                        </button>
                       </div>
                     ))}
                     <button 
                       onClick={() => setNewChecklist({...newChecklist, items: [...newChecklist.items, { id: Date.now().toString(), text: '', type: 'checkbox', requiredPhoto: false }]})}
-                      className="text-bento-accent text-xs font-bold"
+                      className="w-full py-3 border-2 border-dashed border-bento-border rounded-xl text-bento-accent text-xs font-bold hover:bg-bento-accent/5 transition-colors flex items-center justify-center gap-2"
                     >
-                      + Adicionar Item
+                      <Plus size={14} />
+                      Adicionar Item
                     </button>
                   </div>
 
@@ -319,17 +409,42 @@ export const AdminDashboard = () => {
 
           {activeTab === 'history' && (
             <div>
-              <h2 className="text-lg font-bold mb-6">Histórico Recente</h2>
+              <h2 className="text-lg font-bold mb-6">Submissões Recebidas</h2>
               <div className="space-y-3">
                 {submissions.map(sub => (
-                  <div key={sub.id} className="flex items-center justify-between p-4 border-b border-bento-border last:border-0">
-                    <div>
-                      <p className="text-sm font-bold">{sub.userName} <span className="text-bento-muted font-normal">em</span> {sub.praca}</p>
-                      <p className="text-[11px] text-bento-muted">{new Date(sub.timestamp).toLocaleString()}</p>
+                  <div key={sub.id} className="bento-card bg-bento-bg/50 border-bento-border">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <p className="text-sm font-bold text-bento-ink">{sub.userName}</p>
+                        <p className="text-[11px] text-bento-muted">{new Date(sub.timestamp).toLocaleString('pt-BR')}</p>
+                      </div>
+                      <span className="bento-tag bg-bento-success/10 text-bento-success border-bento-success/20">
+                        {sub.praca}
+                      </span>
                     </div>
-                    <span className="bento-tag">Concluído</span>
+                    
+                    <div className="space-y-2 pt-3 border-t border-bento-border/50">
+                      {Object.entries(sub.responses || {}).map(([itemId, resp]: [string, any]) => {
+                        const template = templates.find(t => t.id === sub.templateId);
+                        const item = template?.items.find((i: any) => i.id === itemId);
+                        return (
+                          <div key={itemId} className="flex justify-between items-center text-xs">
+                            <span className="text-bento-muted">{item?.text || 'Item removido'}:</span>
+                            <span className="font-bold text-bento-ink">
+                              {resp.value === true ? 'Sim' : resp.value === false ? 'Não' : resp.value || 'N/A'}
+                              {resp.hasPhoto && <span className="ml-2 text-[10px] text-bento-accent">(Foto no PDF)</span>}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 ))}
+                {submissions.length === 0 && (
+                  <div className="text-center py-12 text-bento-muted">
+                    Nenhuma submissão encontrada.
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -337,18 +452,27 @@ export const AdminDashboard = () => {
 
         {/* Stats Grid (Lower Middle) */}
         <div className="lg:col-span-1 lg:row-span-2 grid grid-cols-3 gap-3">
-          <div className="bento-card justify-center items-center text-center">
+          <button 
+            onClick={() => setActiveTab('history')}
+            className="bento-card justify-center items-center text-center hover:bg-bento-accent/5 transition-colors"
+          >
             <p className="text-[10px] text-bento-muted uppercase tracking-wider">Submissões</p>
             <p className="text-2xl font-bold text-bento-accent">{submissions.length}</p>
-          </div>
-          <div className="bento-card justify-center items-center text-center">
+          </button>
+          <button 
+            onClick={() => setActiveTab('users')}
+            className="bento-card justify-center items-center text-center hover:bg-bento-accent/5 transition-colors"
+          >
             <p className="text-[10px] text-bento-muted uppercase tracking-wider">Usuários</p>
             <p className="text-2xl font-bold text-bento-ink">{users.length}</p>
-          </div>
-          <div className="bento-card justify-center items-center text-center">
+          </button>
+          <button 
+            onClick={() => setActiveTab('checklists')}
+            className="bento-card justify-center items-center text-center hover:bg-bento-accent/5 transition-colors"
+          >
             <p className="text-[10px] text-bento-muted uppercase tracking-wider">Templates</p>
             <p className="text-2xl font-bold text-bento-ink">{templates.length}</p>
-          </div>
+          </button>
         </div>
 
         {/* Admin Panel (Right Top) */}

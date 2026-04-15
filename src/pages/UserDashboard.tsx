@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, addDoc, doc, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { useAuth } from '../AuthContext';
 import { PhotoCapture } from '../components/PhotoCapture';
-import { CheckCircle2, ClipboardList, Thermometer, Type, Send, Loader2, LogOut, Home, RefreshCw } from 'lucide-react';
+import { CheckCircle2, ClipboardList, Thermometer, Type, Send, Loader2, LogOut, Home, RefreshCw, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
@@ -29,6 +30,8 @@ export const UserDashboard = () => {
         setTemplate({ id: docSnap.id, ...docSnap.data() });
       }
       setLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `checklistTemplates/${profile.assignedChecklistId}`);
     });
 
     return () => unsub();
@@ -50,40 +53,100 @@ export const UserDashboard = () => {
 
   const generatePDF = async (submissionData: any) => {
     const doc = new jsPDF();
-    doc.setFontSize(20);
-    doc.text('Relatório de Checklist - GastroCheck', 20, 20);
+    const pageWidth = doc.internal.pageSize.getWidth();
     
-    doc.setFontSize(12);
-    doc.text(`Checklist: ${template.title}`, 20, 35);
-    doc.text(`Usuário: ${profile.displayName}`, 20, 42);
-    doc.text(`Data: ${new Date().toLocaleString()}`, 20, 49);
-    doc.text(`Praça: ${template.praca}`, 20, 56);
+    doc.setFontSize(22);
+    doc.setTextColor(249, 115, 22); // Bento Accent
+    doc.text('GastroCheck Pro', pageWidth / 2, 20, { align: 'center' });
+    
+    doc.setFontSize(16);
+    doc.setTextColor(30, 41, 59); // Bento Ink
+    doc.text('Relatório de Conformidade', pageWidth / 2, 30, { align: 'center' });
+    
+    doc.setDrawColor(226, 232, 240);
+    doc.line(20, 35, pageWidth - 20, 35);
+
+    doc.setFontSize(10);
+    doc.setTextColor(100, 116, 139); // Bento Muted
+    doc.text(`Checklist: ${template.title}`, 20, 45);
+    doc.text(`Praça: ${template.praca}`, 20, 52);
+    doc.text(`Responsável: ${profile.displayName}`, pageWidth - 20, 45, { align: 'right' });
+    doc.text(`Data/Hora: ${new Date().toLocaleString('pt-BR')}`, pageWidth - 20, 52, { align: 'right' });
 
     const tableData = template.items.map((item: any) => [
       item.text,
-      responses[item.id]?.value || 'N/A',
+      responses[item.id]?.value || 'Pendente',
       responses[item.id]?.photoUrl ? 'Sim' : 'Não'
     ]);
 
     (doc as any).autoTable({
-      startY: 65,
-      head: [['Item', 'Resposta', 'Foto']],
+      startY: 60,
+      head: [['Item do Checklist', 'Resultado', 'Foto']],
       body: tableData,
+      headStyles: { fillStyle: 'f97316', textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { top: 60 },
     });
 
+    // Add Photos Section
+    let currentY = (doc as any).lastAutoTable.finalY + 20;
+    const itemsWithPhotos = template.items.filter((item: any) => responses[item.id]?.photoUrl);
+
+    if (itemsWithPhotos.length > 0) {
+      if (currentY > 240) {
+        doc.addPage();
+        currentY = 20;
+      }
+      
+      doc.setFontSize(14);
+      doc.setTextColor(30, 41, 59);
+      doc.text('Evidências Fotográficas', 20, currentY);
+      currentY += 10;
+
+      for (const item of itemsWithPhotos) {
+        if (currentY > 220) {
+          doc.addPage();
+          currentY = 20;
+        }
+        
+        doc.setFontSize(10);
+        doc.setTextColor(100, 116, 139);
+        doc.text(`Item: ${item.text}`, 20, currentY);
+        currentY += 5;
+
+        try {
+          const imgData = responses[item.id].photoUrl;
+          doc.addImage(imgData, 'JPEG', 20, currentY, 60, 45);
+          currentY += 55;
+        } catch (e) {
+          console.error('Error adding image to PDF', e);
+        }
+      }
+    }
+
+    doc.save(`GastroCheck_${template.title.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`);
     return doc.output('blob');
   };
 
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
+      // Strip photos from Firestore submission as requested
+      const responsesForFirestore = { ...responses };
+      Object.keys(responsesForFirestore).forEach(key => {
+        if (responsesForFirestore[key].photoUrl) {
+          delete responsesForFirestore[key].photoUrl;
+          responsesForFirestore[key].hasPhoto = true; // Just a flag
+        }
+      });
+
       const submission = {
         templateId: template.id,
         userId: profile.uid,
         userName: profile.displayName,
         praca: template.praca,
         timestamp: new Date().toISOString(),
-        responses,
+        responses: responsesForFirestore,
       };
 
       await addDoc(collection(db, 'submissions'), submission);
@@ -94,7 +157,7 @@ export const UserDashboard = () => {
       window.open(`https://wa.me/?text=${message}`, '_blank');
 
     } catch (error) {
-      console.error('Error submitting checklist:', error);
+      handleFirestoreError(error, OperationType.CREATE, 'submissions');
     } finally {
       setSubmitting(false);
     }
@@ -111,7 +174,23 @@ export const UserDashboard = () => {
       <div className="bento-card max-w-sm w-full text-center py-12">
         <ClipboardList size={64} className="mx-auto text-bento-muted mb-4 opacity-20" />
         <h2 className="text-xl font-bold text-bento-ink">Nenhum checklist atribuído</h2>
-        <p className="text-bento-muted mt-2 text-sm">Contate o administrador para receber suas tarefas do dia.</p>
+        <p className="text-bento-muted mt-2 mb-8 text-sm">Contate o administrador para receber suas tarefas do dia.</p>
+        <div className="space-y-3">
+          <button 
+            onClick={() => window.location.reload()}
+            className="w-full bg-bento-accent text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-orange-200"
+          >
+            <RefreshCw size={18} />
+            Recarregar Página
+          </button>
+          <button 
+            onClick={() => signOut(auth)}
+            className="w-full bg-white border border-red-200 text-red-500 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
+          >
+            <LogOut size={18} />
+            Sair da Conta
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -139,35 +218,37 @@ export const UserDashboard = () => {
       <div className="max-w-2xl mx-auto space-y-4">
         {/* Header Card */}
         <header className="bento-card">
-          <div className="flex justify-between items-start">
-            <div className="flex items-start gap-3">
-              <button 
-                onClick={() => window.location.href = '/'}
-                className="p-2 bg-bento-bg rounded-xl text-bento-muted hover:text-bento-accent transition-colors"
-                title="Início"
-              >
-                <Home size={20} />
-              </button>
-              <button 
-                onClick={() => window.location.reload()}
-                className="p-2 bg-bento-bg rounded-xl text-bento-muted hover:text-bento-accent transition-colors"
-                title="Recarregar"
-              >
-                <RefreshCw size={20} />
-              </button>
+          <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className="flex gap-2 mr-2">
+                <button 
+                  onClick={() => window.location.href = '/'}
+                  className="p-3 bg-bento-bg rounded-2xl text-bento-ink hover:bg-bento-accent hover:text-white transition-all shadow-sm border border-bento-border"
+                  title="Início"
+                >
+                  <Home size={20} />
+                </button>
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="p-3 bg-bento-bg rounded-2xl text-bento-ink hover:bg-bento-accent hover:text-white transition-all shadow-sm border border-bento-border"
+                  title="Recarregar"
+                >
+                  <RefreshCw size={20} />
+                </button>
+              </div>
               <div>
-                <h1 className="text-xl font-bold text-bento-ink">{template?.title}</h1>
-                <p className="text-sm text-bento-muted">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+                <h1 className="text-xl font-bold text-bento-ink leading-tight">{template?.title}</h1>
+                <p className="text-xs text-bento-muted font-medium">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
               </div>
             </div>
-            <div className="flex flex-col items-end gap-2">
-              <span className="bento-tag">Praça: {template?.praca}</span>
+            <div className="flex items-center justify-between w-full sm:w-auto sm:flex-col sm:items-end gap-2">
+              <span className="bento-tag bg-bento-accent/10 text-bento-accent border-bento-accent/20">Praça: {template?.praca}</span>
               <button 
                 onClick={() => signOut(auth)}
-                className="text-red-500 text-xs font-bold flex items-center gap-1 hover:opacity-80 transition-opacity"
+                className="bg-red-50 text-red-500 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-red-100 transition-colors border border-red-100"
               >
                 <LogOut size={14} />
-                Sair
+                Sair da Conta
               </button>
             </div>
           </div>
@@ -222,6 +303,19 @@ export const UserDashboard = () => {
                       onChange={(e) => handleResponseChange(item.id, e.target.value)}
                     />
                     <span className="text-bento-muted font-bold">°C</span>
+                  </div>
+                )}
+
+                {item.type === 'time' && (
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex-1 max-w-[160px]">
+                      <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-bento-muted" size={16} />
+                      <input 
+                        type="time" 
+                        className="w-full pl-10 pr-4 py-2 bg-bento-bg border border-bento-border rounded-xl outline-none font-bold"
+                        onChange={(e) => handleResponseChange(item.id, e.target.value)}
+                      />
+                    </div>
                   </div>
                 )}
 
