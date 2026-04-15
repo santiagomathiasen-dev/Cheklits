@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  
+  --color-bento-bg: #F3F4F6;
+  --color-bento-card: #FFFFFF;
+  --color-bento-ink: #1F2937;
+  --color-bento-accent: #F97316;
+  --color-bento-success: #10B981;
+  --color-bento-border: #E5E7EB;
+  --color-bento-muted: #6B7280;
+}
+
+@layer base {
+  body {
+    @apply bg-bento-bg text-bento-ink antialiased font-sans;
+  }
+}
+
+@layer components {
+  .bento-card {
+    @apply bg-bento-card rounded-[16px] border border-bento-border p-5 flex flex-col shadow-sm;
+  }
+  
+  .bento-tag {
+    @apply bg-[#FFF7ED] text-bento-accent px-3 py-1 rounded-[20px] text-[12px] font-semibold uppercase;
+  }
+  
+  .bento-sidebar {
+    @apply bg-bento-ink text-white;
+  }
+  
+  .bento-nav-link {
+    @apply py-3 text-[14px] opacity-70 cursor-pointer transition-all;
+  }
+  
+  .bento-nav-link-active {
+    @apply opacity-100 font-semibold text-bento-accent;
+  }
+}
+
+/* Custom styles for better mobile experience */
+input[type="checkbox"] {
+  @apply cursor-pointer;
+}
+
+button {
+  @apply active:scale-95 transition-transform;
+}

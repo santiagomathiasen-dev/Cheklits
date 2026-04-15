@@ -1,0 +1,6 @@
+{
+  "name": "GastroCheck",
+  "description": "App de checklist profissional para gastronomia com gestão de praças, fotos, relatórios PDF e sincronização com Google Drive.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": []
+}
