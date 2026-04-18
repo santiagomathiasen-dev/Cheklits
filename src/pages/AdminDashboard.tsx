@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { collection, onSnapshot, addDoc, updateDoc, doc, deleteDoc, query, orderBy } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
-import { Plus, Trash2, Users, ClipboardList, Settings, ChevronRight, Save, LayoutGrid, LogOut, Eye, X, CheckCircle2, Home, RefreshCw, Camera } from 'lucide-react';
+import { Plus, Trash2, Users, ClipboardList, Settings, ChevronRight, Save, LayoutGrid, LogOut, Eye, X, CheckCircle2, Home, RefreshCw, Camera, UserPlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { signOut } from 'firebase/auth';
 import { cn } from '../lib/utils';
 import { useAuth } from '../AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 const PreviewModal = ({ isOpen, onClose, checklist }: { isOpen: boolean, onClose: () => void, checklist: any }) => {
   if (!isOpen) return null;
@@ -115,6 +116,7 @@ export const AdminDashboard = () => {
   const [isPreviewing, setIsPreviewing] = useState(false);
   
   const { isAdmin } = useAuth();
+  const navigate = useNavigate();
   
   const [newChecklist, setNewChecklist] = useState({
     title: '',
@@ -248,6 +250,13 @@ export const AdminDashboard = () => {
             >
               <LayoutGrid size={18} className="inline mr-2" />
               Submissões
+            </button>
+            <button 
+              onClick={() => navigate('/admin/users')}
+              className="bento-nav-link text-left flex items-center gap-2 mt-4 text-orange-600 font-bold bg-orange-50/50 border border-orange-100"
+            >
+              <UserPlus size={18} />
+              Gestão de Acessos
             </button>
           </nav>
 

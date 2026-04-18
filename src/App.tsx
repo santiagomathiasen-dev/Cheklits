@@ -3,10 +3,12 @@ import { AuthProvider, useAuth } from './AuthContext';
 import { Login } from './pages/Login';
 import { UserDashboard } from './pages/UserDashboard';
 import { AdminDashboard } from './pages/AdminDashboard';
+import { AdminUsers } from './pages/AdminUsers';
+import { PendingApproval } from './pages/PendingApproval';
 import { Loader2 } from 'lucide-react';
 
 const AppContent = () => {
-  const { user, profile, loading, isAdmin } = useAuth();
+  const { user, profile, loading, isAdmin, isApproved } = useAuth();
 
   if (loading) {
     return (
@@ -26,11 +28,19 @@ const AppContent = () => {
         path="/" 
         element={
           user ? (
-            isAdmin ? <AdminDashboard /> : <UserDashboard />
+            isApproved ? (
+              isAdmin ? <AdminDashboard /> : <UserDashboard />
+            ) : (
+              <PendingApproval />
+            )
           ) : (
             <Navigate to="/login" />
           )
         } 
+      />
+      <Route 
+        path="/admin/users" 
+        element={isAdmin ? <AdminUsers /> : <Navigate to="/" />} 
       />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>

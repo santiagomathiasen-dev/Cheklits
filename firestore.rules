@@ -19,6 +19,14 @@ service cloud.firestore {
     }
 
     // Role check - Admins are defined by email or specific doc role
+    function isApproved() {
+      return isAuthenticated() && (
+        request.auth.token.email == "santiago02061992@gmail.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isApproved == true)
+      );
+    }
+
     function isAdmin() {
       return isAuthenticated() && (
         request.auth.token.email == "santiago02061992@gmail.com" ||
@@ -47,6 +55,7 @@ service cloud.firestore {
       return data.uid is string && data.uid.size() > 0 &&
              data.email is string && data.email.size() > 0 &&
              data.role in ['admin', 'staff'] &&
+             data.isApproved is bool &&
              (!('displayName' in data) || data.displayName is string || data.displayName == null) &&
              (!('assignedChecklistIds' in data) || data.assignedChecklistIds is list);
     }
@@ -84,9 +93,9 @@ service cloud.firestore {
     }
 
     match /checklistTemplates/{templateId} {
-      // Templates are readable by all authenticated staff
+      // Templates are readable by all approved staff
       // isAdmin() is checked first for efficiency
-      allow read: if isAdmin() || isAuthenticated();
+      allow read: if isAdmin() || isApproved();
       
       allow create, update: if isAdmin() && isValidTemplate(incoming());
       allow delete: if isAdmin();
@@ -95,10 +104,10 @@ service cloud.firestore {
     match /submissions/{submissionId} {
       // Secure List Query (Pillar 8): Restricted to admin or owner
       // We avoid get() in list by checking resource.data directly
-      allow list: if isAuthenticated() && (isAdmin() || resource.data.userId == request.auth.uid);
-      allow get: if isAuthenticated() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow list: if isAuthenticated() && (isAdmin() || (isApproved() && resource.data.userId == request.auth.uid));
+      allow get: if isAuthenticated() && (isAdmin() || (isApproved() && resource.data.userId == request.auth.uid));
       
-      allow create: if isAuthenticated() && isValidSubmission(incoming()) && exists(/databases/$(database)/documents/checklistTemplates/$(incoming().templateId));
+      allow create: if isApproved() && isValidSubmission(incoming()) && exists(/databases/$(database)/documents/checklistTemplates/$(incoming().templateId));
       
       // Submissions are immutable except for admins
       allow update, delete: if isAdmin();
