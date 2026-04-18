@@ -14,22 +14,32 @@ import { signOut } from 'firebase/auth';
 export const UserDashboard = () => {
   const { profile } = useAuth();
   const [template, setTemplate] = useState<any>(null);
+  const [availableTemplates, setAvailableTemplates] = useState<any[]>([]);
   const [responses, setResponses] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
-    if (!profile?.assignedChecklistId) {
+    // Fetch all templates for selection
+    const unsubTemplates = onSnapshot(collection(db, 'checklistTemplates'), (snap) => {
+      const ts = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAvailableTemplates(ts);
       setLoading(false);
-      return;
-    }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'checklistTemplates');
+    });
+
+    return () => unsubTemplates();
+  }, []);
+
+  useEffect(() => {
+    if (!profile?.assignedChecklistId) return;
 
     const unsub = onSnapshot(doc(db, 'checklistTemplates', profile.assignedChecklistId), (docSnap) => {
       if (docSnap.exists()) {
         setTemplate({ id: docSnap.id, ...docSnap.data() });
       }
-      setLoading(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, `checklistTemplates/${profile.assignedChecklistId}`);
     });
@@ -153,8 +163,17 @@ export const UserDashboard = () => {
       await generatePDF(submission);
       setSubmitted(true);
       
-      const message = encodeURIComponent(`Checklist ${template.title} concluído por ${profile.displayName} na praça ${template.praca}.`);
-      window.open(`https://wa.me/?text=${message}`, '_blank');
+      const message = encodeURIComponent(
+        `🚀 *GastroCheck Pro - Novo Checklist Concluído*\n\n` +
+        `📋 *Checklist:* ${template.title}\n` +
+        `👤 *Usuário:* ${profile.displayName}\n` +
+        `📍 *Praça:* ${template.praca}\n` +
+        `⏰ *Data/Hora:* ${new Date().toLocaleString('pt-BR')}\n\n` +
+        `✅ O relatório PDF foi gerado e está disponível no dispositivo do usuário.`
+      );
+      
+      const whatsappUrl = `https://wa.me/?text=${message}`;
+      window.open(whatsappUrl, '_blank');
 
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'submissions');
@@ -169,28 +188,57 @@ export const UserDashboard = () => {
     </div>
   );
 
-  if (!profile?.assignedChecklistId) return (
-    <div className="min-h-screen bg-bento-bg p-6 flex items-center justify-center">
-      <div className="bento-card max-w-sm w-full text-center py-12">
-        <ClipboardList size={64} className="mx-auto text-bento-muted mb-4 opacity-20" />
-        <h2 className="text-xl font-bold text-bento-ink">Nenhum checklist atribuído</h2>
-        <p className="text-bento-muted mt-2 mb-8 text-sm">Contate o administrador para receber suas tarefas do dia.</p>
-        <div className="space-y-3">
-          <button 
-            onClick={() => window.location.reload()}
-            className="w-full bg-bento-accent text-white py-3 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-orange-200"
-          >
-            <RefreshCw size={18} />
-            Recarregar Página
-          </button>
-          <button 
-            onClick={() => signOut(auth)}
-            className="w-full bg-white border border-red-200 text-red-500 py-3 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-red-50 transition-colors"
-          >
-            <LogOut size={18} />
-            Sair da Conta
-          </button>
+  if (!template) return (
+    <div className="min-h-screen bg-bento-bg p-4 sm:p-6">
+      <div className="max-w-2xl mx-auto">
+        <header className="bento-card mb-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-xl font-bold text-bento-ink">Escolha um Checklist</h1>
+              <p className="text-xs text-bento-muted">Selecione a tarefa que deseja iniciar no momento</p>
+            </div>
+            <button 
+              onClick={() => signOut(auth)}
+              className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+            >
+              <LogOut size={20} />
+            </button>
+          </div>
+        </header>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {availableTemplates.map((t) => (
+            <motion.button
+              key={t.id}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => setTemplate(t)}
+              className="bento-card text-left hover:border-bento-accent transition-all group"
+            >
+              <div className="flex items-start justify-between mb-2">
+                <div className="p-3 bg-bento-accent/10 rounded-2xl text-bento-accent group-hover:bg-bento-accent group-hover:text-white transition-colors">
+                  <ClipboardList size={24} />
+                </div>
+                <span className="bento-tag text-[10px]">{t.praca}</span>
+              </div>
+              <h3 className="font-bold text-bento-ink text-lg">{t.title}</h3>
+              <p className="text-xs text-bento-muted mt-1">{t.items?.length || 0} itens para conferência</p>
+            </motion.button>
+          ))}
         </div>
+
+        {availableTemplates.length === 0 && !loading && (
+          <div className="bento-card text-center py-20 bg-gray-50/50">
+            <ClipboardList size={48} className="mx-auto text-bento-muted opacity-20 mb-4" />
+            <p className="text-bento-muted font-medium">Nenhum checklist disponível ainda.</p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="mt-4 text-bento-accent font-bold text-sm flex items-center gap-2 mx-auto"
+            >
+              <RefreshCw size={14} /> Atualizar
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -222,9 +270,12 @@ export const UserDashboard = () => {
             <div className="flex items-center gap-3 w-full sm:w-auto">
               <div className="flex gap-2 mr-2">
                 <button 
-                  onClick={() => window.location.href = '/'}
+                  onClick={() => {
+                    setTemplate(null);
+                    setResponses({});
+                  }}
                   className="p-3 bg-bento-bg rounded-2xl text-bento-ink hover:bg-bento-accent hover:text-white transition-all shadow-sm border border-bento-border"
-                  title="Início"
+                  title="Trocar Checklist"
                 >
                   <Home size={20} />
                 </button>
