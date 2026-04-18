@@ -45,6 +45,7 @@ service cloud.firestore {
              data.role in ['admin', 'staff'] &&
              (!('displayName' in data) || data.displayName is string) &&
              (!('assignedChecklistId' in data) || data.assignedChecklistId is string) &&
+             (!('assignedChecklistIds' in data) || data.assignedChecklistIds is list) &&
              (!('praca' in data) || data.praca is string);
     }
 

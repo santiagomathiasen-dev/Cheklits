@@ -9,7 +9,12 @@
         "email": { "type": "string" },
         "displayName": { "type": "string" },
         "role": { "type": "string", "enum": ["admin", "staff"] },
-        "assignedChecklistId": { "type": "string", "description": "Specific checklist assigned to this user" },
+        "assignedChecklistId": { "type": "string", "description": "Obsolete: single checklist field" },
+        "assignedChecklistIds": { 
+          "type": "array", 
+          "items": { "type": "string" },
+          "description": "Array of checklist IDs assigned to this user" 
+        },
         "praca": { "type": "string", "description": "Assigned station/section" }
       },
       "required": ["uid", "email", "role"]

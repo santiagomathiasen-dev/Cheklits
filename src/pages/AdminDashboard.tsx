@@ -5,6 +5,7 @@ import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandle
 import { Plus, Trash2, Users, ClipboardList, Settings, ChevronRight, Save, LayoutGrid, LogOut, Eye, X, CheckCircle2, Home, RefreshCw, Camera } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { signOut } from 'firebase/auth';
+import { cn } from '../lib/utils';
 
 const PreviewModal = ({ isOpen, onClose, checklist }: { isOpen: boolean, onClose: () => void, checklist: any }) => {
   if (!isOpen) return null;
@@ -161,9 +162,12 @@ export const AdminDashboard = () => {
     }
   };
 
-  const assignChecklist = async (userId: string, templateId: string) => {
+  const toggleChecklistAssignment = async (userId: string, templateId: string, currentIds: string[] = []) => {
     try {
-      await updateDoc(doc(db, 'users', userId), { assignedChecklistId: templateId });
+      const newIds = currentIds.includes(templateId)
+        ? currentIds.filter(id => id !== templateId)
+        : [...currentIds, templateId];
+      await updateDoc(doc(db, 'users', userId), { assignedChecklistIds: newIds });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${userId}`);
     }
@@ -383,24 +387,52 @@ export const AdminDashboard = () => {
 
           {activeTab === 'users' && (
             <div>
-              <h2 className="text-lg font-bold mb-6">Usuários</h2>
+              <h2 className="text-lg font-bold mb-6">Usuários e Atribuições</h2>
               <div className="space-y-4">
                 {users.map(user => (
-                  <div key={user.id} className="flex items-center justify-between p-4 bg-bento-bg rounded-xl">
-                    <div>
-                      <p className="font-bold text-sm">{user.displayName}</p>
-                      <p className="text-xs text-bento-muted">{user.email}</p>
+                  <div key={user.id} className="bento-card bg-bento-bg/30 border-bento-border p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-bento-accent/10 flex items-center justify-center font-bold text-bento-accent text-sm">
+                          {user.displayName?.charAt(0) || 'U'}
+                        </div>
+                        <div>
+                          <p className="font-bold text-sm text-bento-ink">{user.displayName}</p>
+                          <p className="text-[11px] text-bento-muted">{user.email}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-bold text-bento-muted uppercase tracking-wider">
+                          {(user.assignedChecklistIds?.length || 0)} ATRIBUÍDOS
+                        </span>
+                      </div>
                     </div>
-                    <select 
-                      className="p-2 bg-white border border-bento-border rounded-lg text-xs"
-                      value={user.assignedChecklistId || ''}
-                      onChange={e => assignChecklist(user.id, e.target.value)}
-                    >
-                      <option value="">Nenhum Checklist</option>
-                      {templates.map(t => (
-                        <option key={t.id} value={t.id}>{t.title}</option>
-                      ))}
-                    </select>
+                    
+                    <div className="pt-3 border-t border-bento-border/50">
+                      <p className="text-[10px] font-bold text-bento-muted mb-3 uppercase">Checklists Disponíveis</p>
+                      <div className="flex flex-wrap gap-2">
+                        {templates.map(t => {
+                          const isAssigned = user.assignedChecklistIds?.includes(t.id);
+                          return (
+                            <button
+                              key={t.id}
+                              onClick={() => toggleChecklistAssignment(user.id, t.id, user.assignedChecklistIds)}
+                              className={cn(
+                                "px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
+                                isAssigned 
+                                  ? "bg-bento-accent text-white border-bento-accent shadow-sm"
+                                  : "bg-white text-bento-muted border-bento-border hover:bg-gray-50"
+                              )}
+                            >
+                              {t.title}
+                            </button>
+                          );
+                        })}
+                        {templates.length === 0 && (
+                          <p className="text-[10px] text-bento-muted italic">Nenhum template criado</p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

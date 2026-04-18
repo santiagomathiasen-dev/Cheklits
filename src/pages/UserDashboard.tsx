@@ -21,30 +21,25 @@ export const UserDashboard = () => {
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
-    // Fetch all templates for selection
+    if (!profile) return;
+    
+    // Fetch all templates and filter by user's assignments
     const unsubTemplates = onSnapshot(collection(db, 'checklistTemplates'), (snap) => {
-      const ts = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAvailableTemplates(ts);
+      const allTemplates = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const assignedIds = profile.assignedChecklistIds || [];
+      const userTemplates = allTemplates.filter(t => assignedIds.includes(t.id));
+      setAvailableTemplates(userTemplates);
       setLoading(false);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'checklistTemplates');
     });
 
     return () => unsubTemplates();
-  }, []);
+  }, [profile]);
 
   useEffect(() => {
-    if (!profile?.assignedChecklistId) return;
-
-    const unsub = onSnapshot(doc(db, 'checklistTemplates', profile.assignedChecklistId), (docSnap) => {
-      if (docSnap.exists()) {
-        setTemplate({ id: docSnap.id, ...docSnap.data() });
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, `checklistTemplates/${profile.assignedChecklistId}`);
-    });
-
-    return () => unsub();
+    if (!profile?.assignedChecklistIds?.length) return;
+    // No need to fetch a specific template by ID here anymore as we fetch all and filter
   }, [profile]);
 
   const handleResponseChange = (itemId: string, value: any) => {
@@ -230,12 +225,13 @@ export const UserDashboard = () => {
         {availableTemplates.length === 0 && !loading && (
           <div className="bento-card text-center py-20 bg-gray-50/50">
             <ClipboardList size={48} className="mx-auto text-bento-muted opacity-20 mb-4" />
-            <p className="text-bento-muted font-medium">Nenhum checklist disponível ainda.</p>
+            <h2 className="text-lg font-bold text-bento-ink">Sem Checklists Atribuídos</h2>
+            <p className="text-bento-muted mt-1 text-xs">Contate o administrador para receber suas tarefas.</p>
             <button 
               onClick={() => window.location.reload()}
-              className="mt-4 text-bento-accent font-bold text-sm flex items-center gap-2 mx-auto"
+              className="mt-6 bg-white border border-bento-border text-bento-accent px-6 py-2 rounded-xl font-bold text-sm flex items-center gap-2 mx-auto shadow-sm"
             >
-              <RefreshCw size={14} /> Atualizar
+              <RefreshCw size={14} /> Atualizar Página
             </button>
           </div>
         )}
