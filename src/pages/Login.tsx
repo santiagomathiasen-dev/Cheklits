@@ -7,9 +7,17 @@ import { motion } from 'motion/react';
 export const Login = () => {
   const handleLogin = async () => {
     try {
+      googleProvider.setCustomParameters({ prompt: 'select_account' });
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login failed:', error);
+      if (error.code === 'auth/popup-closed-by-user') {
+        alert('O login foi cancelado. Por favor, tente novamente sem fechar a janela.');
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        // Safe to ignore or handle
+      } else {
+        alert(`Erro ao entrar: ${error.message}\n\nDica: Tente abrir o app em uma NOVA GUIA usando o botão no canto superior direito do preview.`);
+      }
     }
   };
 
