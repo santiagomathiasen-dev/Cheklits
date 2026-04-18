@@ -44,10 +44,8 @@ service cloud.firestore {
       return data.uid is string &&
              data.email is string &&
              data.role in ['admin', 'staff'] &&
-             (!('displayName' in data) || data.displayName is string) &&
-             (!('assignedChecklistId' in data) || data.assignedChecklistId is string) &&
-             (!('assignedChecklistIds' in data) || data.assignedChecklistIds is list) &&
-             (!('praca' in data) || data.praca is string);
+             (!('displayName' in data) || data.displayName is string || data.displayName == null) &&
+             (!('assignedChecklistIds' in data) || data.assignedChecklistIds is list);
     }
 
     function isValidTemplate(data) {
@@ -59,7 +57,7 @@ service cloud.firestore {
     function isValidSubmission(data) {
       return data.templateId is string &&
              data.userId is string &&
-             data.userName is string &&
+             (!('userName' in data) || data.userName is string || data.userName == null) &&
              data.timestamp is string;
     }
 

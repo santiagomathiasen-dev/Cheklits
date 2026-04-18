@@ -45,10 +45,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const newProfile = {
                 uid: firebaseUser.uid,
                 email: firebaseUser.email,
-                displayName: firebaseUser.displayName,
+                displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Usuário',
                 role: firebaseUser.email === 'santiago02061992@gmail.com' ? 'admin' : 'staff',
                 createdAt: new Date().toISOString(),
-                assignedChecklistIds: [] // Initialize empty array
+                assignedChecklistIds: []
               };
               await setDoc(doc(db, 'users', firebaseUser.uid), newProfile);
               setProfile(newProfile);
