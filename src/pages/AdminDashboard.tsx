@@ -6,6 +6,7 @@ import { Plus, Trash2, Users, ClipboardList, Settings, ChevronRight, Save, Layou
 import { motion, AnimatePresence } from 'motion/react';
 import { signOut } from 'firebase/auth';
 import { cn } from '../lib/utils';
+import { useAuth } from '../AuthContext';
 
 const PreviewModal = ({ isOpen, onClose, checklist }: { isOpen: boolean, onClose: () => void, checklist: any }) => {
   if (!isOpen) return null;
@@ -113,7 +114,8 @@ export const AdminDashboard = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   
-  // New Checklist State
+  const { isAdmin } = useAuth();
+  
   const [newChecklist, setNewChecklist] = useState({
     title: '',
     praca: '',
@@ -122,6 +124,8 @@ export const AdminDashboard = () => {
   });
 
   useEffect(() => {
+    if (!isAdmin) return;
+
     const unsubTemplates = onSnapshot(collection(db, 'checklistTemplates'), (snap) => {
       setTemplates(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => {
@@ -145,7 +149,7 @@ export const AdminDashboard = () => {
       unsubUsers();
       unsubSubmissions();
     };
-  }, []);
+  }, [isAdmin]);
 
   const handleCreateChecklist = async () => {
     if (!newChecklist.title || !newChecklist.praca) return;
