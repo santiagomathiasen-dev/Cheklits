@@ -1,6 +1,7 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -21,11 +22,25 @@ async function startServer() {
       server: { 
         middlewareMode: true,
         host: '0.0.0.0',
-        port: 3000
+        port: 3000,
+        hmr: false // Disable HMR explicitly
       },
       appType: "spa",
     });
     app.use(vite.middlewares);
+    
+    // Explicitly handle index.html for dev mode if middleware doesn't
+    app.use('*', async (req, res, next) => {
+      const url = req.originalUrl;
+      try {
+        const templatePath = path.resolve(__dirname, 'index.html');
+        let template = fs.readFileSync(templatePath, 'utf-8');
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+      } catch (e) {
+        next(e);
+      }
+    });
   } else {
     // Production static serving
     const distPath = path.join(process.cwd(), 'dist');

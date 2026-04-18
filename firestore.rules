@@ -2,23 +2,13 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: users
-    // Fields: uid, email, displayName, role (admin/staff), assignedChecklistId, praca
-    //
-    // Collection: checklistTemplates
-    // Fields: id, title, description, praca, frequency, items, active
-    //
-    // Collection: submissions
-    // Fields: id, templateId, userId, userName, praca, timestamp, responses, pdfUrl
-    //
-    // ===============================================================
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
 
     // ===============================================================
-    // Helper Functions
+    // Helper Functions (8 Pillars Foundation)
     // ===============================================================
     function isAuthenticated() {
       return request.auth != null;
@@ -28,58 +18,89 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    // Role check - Admins are defined by email or specific doc role
     function isAdmin() {
-      return isAuthenticated() && 
-        ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
-         request.auth.token.email == "santiago02061992@gmail.com");
+      return isAuthenticated() && (
+        request.auth.token.email == "santiago02061992@gmail.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
     }
 
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // Domain Validators
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // ===============================================================
+    // Data Validation Blueprints
+    // ===============================================================
+    
     function isValidUser(data) {
-      return data.uid is string &&
-             data.email is string &&
+      return data.uid is string && data.uid.size() > 0 &&
+             data.email is string && data.email.size() > 0 &&
              data.role in ['admin', 'staff'] &&
              (!('displayName' in data) || data.displayName is string || data.displayName == null) &&
              (!('assignedChecklistIds' in data) || data.assignedChecklistIds is list);
     }
 
     function isValidTemplate(data) {
-      return data.title is string && data.title.size() > 0 &&
+      return data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
              data.praca is string &&
-             data.items is list;
+             data.items is list && data.items.size() <= 100;
     }
 
     function isValidSubmission(data) {
       return data.templateId is string &&
-             data.userId is string &&
+             data.userId is string && data.userId == request.auth.uid &&
              (!('userName' in data) || data.userName is string || data.userName == null) &&
              data.timestamp is string;
     }
 
     // ===============================================================
-    // Rules
+    // Collection Rules
     // ===============================================================
 
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin());
-      allow update: if isAuthenticated() && isValidUser(request.resource.data) && (isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role));
+      allow get: if isAuthenticated() && (isOwner(userId) || isAdmin());
+      // List is restricted to admins or finding yourself
+      allow list: if isAdmin() || (isAuthenticated() && resource.id == request.auth.uid);
+      
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(incoming());
+      
+      allow update: if isAuthenticated() && (
+        // Admin can change anything
+        isAdmin() || 
+        // User can update their own non-role fields
+        (isOwner(userId) && incoming().role == existing().role && incoming().uid == existing().uid)
+      ) && isValidUser(incoming());
     }
 
     match /checklistTemplates/{templateId} {
-      allow read: if isAuthenticated();
-      allow create, update: if isAdmin() && isValidTemplate(request.resource.data);
+      // Templates are readable by all authenticated staff
+      // isAdmin() is checked first for efficiency
+      allow read: if isAdmin() || isAuthenticated();
+      
+      allow create, update: if isAdmin() && isValidTemplate(incoming());
       allow delete: if isAdmin();
     }
 
     match /submissions/{submissionId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
-      allow create: if isAuthenticated() && isValidSubmission(request.resource.data);
+      // Secure List Query (Pillar 8): Restricted to admin or owner
+      // We avoid get() in list by checking resource.data directly
+      allow list: if isAuthenticated() && (isAdmin() || resource.data.userId == request.auth.uid);
+      allow get: if isAuthenticated() && (isAdmin() || resource.data.userId == request.auth.uid);
+      
+      allow create: if isAuthenticated() && isValidSubmission(incoming()) && exists(/databases/$(database)/documents/checklistTemplates/$(incoming().templateId));
+      
+      // Submissions are immutable except for admins
       allow update, delete: if isAdmin();
     }
   }
