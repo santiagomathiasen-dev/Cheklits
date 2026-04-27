@@ -1,24 +1,17 @@
-import React from 'react';
-import { signInWithPopup } from 'firebase/auth';
-import { auth, googleProvider } from '../firebase';
-import { LayoutGrid, LogIn } from 'lucide-react';
+import React, { useState } from 'react';
+import { useAuth } from '../AuthContext';
+import { LayoutGrid, LogIn, Mail, User } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export const Login = () => {
-  const handleLogin = async () => {
-    try {
-      googleProvider.setCustomParameters({ prompt: 'select_account' });
-      await signInWithPopup(auth, googleProvider);
-    } catch (error: any) {
-      console.error('Login failed:', error);
-      if (error.code === 'auth/popup-closed-by-user') {
-        alert('O login foi cancelado. Por favor, tente novamente sem fechar a janela.');
-      } else if (error.code === 'auth/cancelled-popup-request') {
-        // Safe to ignore or handle
-      } else {
-        alert(`Erro ao entrar: ${error.message}\n\nDica: Tente abrir o app em uma NOVA GUIA usando o botão no canto superior direito do preview.`);
-      }
-    }
+  const { login } = useAuth();
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) return;
+    login(email, name);
   };
 
   return (
@@ -38,18 +31,42 @@ export const Login = () => {
           </p>
         </div>
 
-        <div className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 bg-white/10 p-8 rounded-3xl backdrop-blur-md border border-white/10 shadow-2xl">
+          <div className="space-y-3">
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-200" size={18} />
+              <input 
+                type="email" 
+                placeholder="Seu e-mail"
+                required
+                className="w-full bg-white/20 border-transparent rounded-xl py-3 pl-10 pr-4 text-white placeholder:text-orange-200 focus:bg-white/30 outline-none transition-all"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-200" size={18} />
+              <input 
+                type="text" 
+                placeholder="Seu nome"
+                className="w-full bg-white/20 border-transparent rounded-xl py-3 pl-10 pr-4 text-white placeholder:text-orange-200 focus:bg-white/30 outline-none transition-all"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+          </div>
           <button 
-            onClick={handleLogin}
+            type="submit"
             className="w-full bg-white text-bento-accent py-4 rounded-2xl font-bold text-lg shadow-xl shadow-orange-900/10 flex items-center justify-center gap-3 hover:bg-orange-50 transition-colors"
           >
             <LogIn size={20} />
-            Entrar com Google
+            Entrar no Sistema
           </button>
-          <p className="text-xs text-orange-200 opacity-70">
-            Acesse seu painel administrativo ou de usuário.
-          </p>
-        </div>
+          <div className="text-xs text-orange-200 opacity-80 pt-2">
+            <p>Admin: santiago02061992@gmail.com</p>
+            <p>Os dados serão salvos localmente neste navegador.</p>
+          </div>
+        </form>
       </motion.div>
 
       {/* Background Decorative Elements */}

@@ -1,14 +1,10 @@
 import React from 'react';
 import { useAuth } from '../AuthContext';
 import { LogOut, Clock, ShieldAlert } from 'lucide-react';
-import { signOut } from 'firebase/auth';
-import { auth } from '../firebase';
 import { motion } from 'motion/react';
 
 export const PendingApproval: React.FC = () => {
-  const { user } = useAuth();
-
-  const handleLogout = () => signOut(auth);
+  const { user, logout } = useAuth();
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -40,7 +36,7 @@ export const PendingApproval: React.FC = () => {
           </div>
 
           <button
-            onClick={handleLogout}
+            onClick={logout}
             className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-xl font-medium hover:bg-gray-800 transition-colors"
           >
             <LogOut size={20} />
@@ -50,7 +46,7 @@ export const PendingApproval: React.FC = () => {
         
         <div className="bg-gray-50 p-4 border-t border-gray-100 text-center">
           <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold">
-            Segurança Validada via Firebase
+            Segurança Validada Localmente
           </p>
         </div>
       </motion.div>

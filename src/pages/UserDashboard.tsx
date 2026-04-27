@@ -1,18 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, addDoc, doc, getDoc } from 'firebase/firestore';
-import { db, auth } from '../firebase';
-import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { dataService } from '../services/dataService';
 import { useAuth } from '../AuthContext';
 import { PhotoCapture } from '../components/PhotoCapture';
-import { CheckCircle2, ClipboardList, Thermometer, Type, Send, Loader2, LogOut, Home, RefreshCw, Clock } from 'lucide-react';
+import { CheckCircle2, ClipboardList, Thermometer, Type, Send, Loader2, LogOut, Home, RefreshCw, Clock, Camera, ShieldAlert } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import { cn } from '../lib/utils';
-import { signOut } from 'firebase/auth';
 
 export const UserDashboard = () => {
-  const { profile } = useAuth();
+  const { profile, logout } = useAuth();
   const [template, setTemplate] = useState<any>(null);
   const [availableTemplates, setAvailableTemplates] = useState<any[]>([]);
   const [responses, setResponses] = useState<Record<string, any>>({});
@@ -21,31 +18,36 @@ export const UserDashboard = () => {
   const [submitted, setSubmitted] = useState(false);
 
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || !profile.organization_id) return;
     
-    // Fetch all templates and filter by user's assignments
-    const unsubTemplates = onSnapshot(collection(db, 'checklistTemplates'), (snap) => {
-      const allTemplates = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const loadTemplates = () => {
+      const allTemplates = dataService.getTemplates(profile.organization_id);
       const assignedIds = profile.assignedChecklistIds || [];
-      const userTemplates = allTemplates.filter(t => assignedIds.includes(t.id));
+      const userTemplates = allTemplates.filter((t: any) => assignedIds.includes(t.id));
       setAvailableTemplates(userTemplates);
       setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'checklistTemplates');
-    });
+    };
 
-    return () => unsubTemplates();
+    loadTemplates();
   }, [profile]);
 
-  useEffect(() => {
-    if (!profile?.assignedChecklistIds?.length) return;
-    // No need to fetch a specific template by ID here anymore as we fetch all and filter
-  }, [profile]);
-
-  const handleResponseChange = (itemId: string, value: any) => {
+  const handleResponseChange = (itemId: string, item: any, value: any) => {
+    const evaluation = dataService.evaluateResponse(item, value);
     setResponses(prev => ({
       ...prev,
-      [itemId]: { ...prev[itemId], value }
+      [itemId]: { 
+        ...prev[itemId], 
+        value, 
+        isConform: evaluation.isConform,
+        message: evaluation.message 
+      }
+    }));
+  };
+
+  const handleActionPlanChange = (itemId: string, action_plan: string) => {
+    setResponses(prev => ({
+      ...prev,
+      [itemId]: { ...prev[itemId], action_plan }
     }));
   };
 
@@ -61,32 +63,33 @@ export const UserDashboard = () => {
     const pageWidth = doc.internal.pageSize.getWidth();
     
     doc.setFontSize(22);
-    doc.setTextColor(249, 115, 22); // Bento Accent
-    doc.text('GastroCheck Pro', pageWidth / 2, 20, { align: 'center' });
+    doc.setTextColor(249, 115, 22);
+    doc.text('Checklist Azura', pageWidth / 2, 20, { align: 'center' });
     
     doc.setFontSize(16);
-    doc.setTextColor(30, 41, 59); // Bento Ink
-    doc.text('Relatório de Conformidade', pageWidth / 2, 30, { align: 'center' });
+    doc.setTextColor(30, 41, 59);
+    doc.text('Auditoria Operacional', pageWidth / 2, 30, { align: 'center' });
     
     doc.setDrawColor(226, 232, 240);
     doc.line(20, 35, pageWidth - 20, 35);
 
     doc.setFontSize(10);
-    doc.setTextColor(100, 116, 139); // Bento Muted
+    doc.setTextColor(100, 116, 139);
     doc.text(`Checklist: ${template.title}`, 20, 45);
-    doc.text(`Praça: ${template.praca}`, 20, 52);
+    doc.text(`Categoria: ${template.category}`, 20, 52);
     doc.text(`Responsável: ${profile.displayName}`, pageWidth - 20, 45, { align: 'right' });
     doc.text(`Data/Hora: ${new Date().toLocaleString('pt-BR')}`, pageWidth - 20, 52, { align: 'right' });
 
     const tableData = template.items.map((item: any) => [
-      item.text,
+      item.label,
       responses[item.id]?.value || 'Pendente',
-      responses[item.id]?.photoUrl ? 'Sim' : 'Não'
+      responses[item.id]?.isConform ? 'OK' : 'ALERTA',
+      responses[item.id]?.action_plan || '-'
     ]);
 
     (doc as any).autoTable({
       startY: 60,
-      head: [['Item do Checklist', 'Resultado', 'Foto']],
+      head: [['Item', 'Valor', 'Status', 'Plano de Ação']],
       body: tableData,
       headStyles: { fillStyle: 'f97316', textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [248, 250, 252] },
@@ -136,7 +139,6 @@ export const UserDashboard = () => {
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
-      // Strip photos from Firestore submission as requested
       const responsesForFirestore = { ...responses };
       Object.keys(responsesForFirestore).forEach(key => {
         if (responsesForFirestore[key].photoUrl) {
@@ -149,29 +151,30 @@ export const UserDashboard = () => {
         templateId: template.id,
         userId: profile.uid,
         userName: profile.displayName,
-        praca: template.praca,
+        organization_id: profile.organization_id,
+        category: template.category,
         timestamp: new Date().toISOString(),
         responses: responsesForFirestore,
       };
 
-      await addDoc(collection(db, 'submissions'), submission);
+      dataService.saveSubmission(submission);
       await generatePDF(submission);
       setSubmitted(true);
       
       const message = encodeURIComponent(
-        `🚀 *GastroCheck Pro - Novo Checklist Concluído*\n\n` +
+        `🚀 *AZURA OPERAÇÕES - Novo Checklist*\n\n` +
         `📋 *Checklist:* ${template.title}\n` +
         `👤 *Usuário:* ${profile.displayName}\n` +
-        `📍 *Praça:* ${template.praca}\n` +
+        `📍 *Categoria:* ${template.category}\n` +
         `⏰ *Data/Hora:* ${new Date().toLocaleString('pt-BR')}\n\n` +
-        `✅ O relatório PDF foi gerado e está disponível no dispositivo do usuário.`
+        `✅ Operação Concluída. Relatório PDF gerado localmente.`
       );
       
       const whatsappUrl = `https://wa.me/?text=${message}`;
       window.open(whatsappUrl, '_blank');
 
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'submissions');
+      console.error("Error saving submission:", error);
     } finally {
       setSubmitting(false);
     }
@@ -193,7 +196,7 @@ export const UserDashboard = () => {
               <p className="text-xs text-bento-muted">Selecione a tarefa que deseja iniciar no momento</p>
             </div>
             <button 
-              onClick={() => signOut(auth)}
+              onClick={logout}
               className="p-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors"
             >
               <LogOut size={20} />
@@ -214,7 +217,7 @@ export const UserDashboard = () => {
                 <div className="p-3 bg-bento-accent/10 rounded-2xl text-bento-accent group-hover:bg-bento-accent group-hover:text-white transition-colors">
                   <ClipboardList size={24} />
                 </div>
-                <span className="bento-tag text-[10px]">{t.praca}</span>
+                <span className="bento-tag text-[10px]">{t.category}</span>
               </div>
               <h3 className="font-bold text-bento-ink text-lg">{t.title}</h3>
               <p className="text-xs text-bento-muted mt-1">{t.items?.length || 0} itens para conferência</p>
@@ -289,9 +292,9 @@ export const UserDashboard = () => {
               </div>
             </div>
             <div className="flex items-center justify-between w-full sm:w-auto sm:flex-col sm:items-end gap-2">
-              <span className="bento-tag bg-bento-accent/10 text-bento-accent border-bento-accent/20">Praça: {template?.praca}</span>
+              <span className="bento-tag bg-bento-accent/10 text-bento-accent border-bento-accent/20">Setor: {template?.category}</span>
               <button 
-                onClick={() => signOut(auth)}
+                onClick={logout}
                 className="bg-red-50 text-red-500 px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-red-100 transition-colors border border-red-100"
               >
                 <LogOut size={14} />
@@ -314,63 +317,96 @@ export const UserDashboard = () => {
                 <div className="flex items-center gap-3">
                   <div className={cn(
                     "w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-colors",
-                    responses[item.id]?.value ? "bg-bento-success border-bento-success" : "border-bento-border"
+                    responses[item.id]?.value !== undefined ? (responses[item.id]?.isConform ? "bg-bento-success border-bento-success" : "bg-red-500 border-red-500") : "border-bento-border"
                   )}>
-                    {responses[item.id]?.value && <CheckCircle2 size={14} className="text-white" />}
+                    {responses[item.id]?.value !== undefined && <CheckCircle2 size={14} className="text-white" />}
                   </div>
-                  <h3 className="font-bold text-bento-ink">{item.text}</h3>
+                  <h3 className="font-bold text-bento-ink">{item.label}</h3>
                 </div>
-                {item.type === 'temperature' && (
-                  <span className="text-xs font-mono text-bento-muted">AFERIÇÃO TEMP.</span>
+                {item.type === 'numeric' && (
+                  <span className="text-[10px] font-bold text-red-400">FAIXA: {item.minValue || '0'} a {item.maxValue || '100'}</span>
                 )}
               </div>
 
               <div className="pl-9 space-y-4">
                 {item.type === 'checkbox' && (
-                  <button 
-                    onClick={() => handleResponseChange(item.id, !responses[item.id]?.value)}
-                    className={cn(
-                      "px-4 py-2 rounded-xl text-sm font-bold transition-all",
-                      responses[item.id]?.value 
-                        ? "bg-bento-success/10 text-bento-success" 
-                        : "bg-bento-bg text-bento-muted"
-                    )}
-                  >
-                    {responses[item.id]?.value ? 'Concluído' : 'Marcar como feito'}
-                  </button>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => handleResponseChange(item.id, item, true)}
+                      className={cn(
+                        "flex-1 py-4 rounded-xl text-sm font-bold transition-all border",
+                        responses[item.id]?.value === true 
+                          ? "bg-bento-success text-white border-bento-success" 
+                          : "bg-white text-bento-muted border-bento-border"
+                      )}
+                    >
+                      SIM
+                    </button>
+                    <button 
+                      onClick={() => handleResponseChange(item.id, item, false)}
+                      className={cn(
+                        "flex-1 py-4 rounded-xl text-sm font-bold transition-all border",
+                        responses[item.id]?.value === false 
+                          ? "bg-red-500 text-white border-red-500" 
+                          : "bg-white text-bento-muted border-bento-border"
+                      )}
+                    >
+                      NÃO
+                    </button>
+                  </div>
                 )}
 
-                {item.type === 'temperature' && (
+                {item.type === 'numeric' && (
                   <div className="flex items-center gap-3">
                     <input 
                       type="number" 
                       placeholder="0.0"
                       step="0.1"
-                      className="w-24 p-2 bg-bento-bg border border-bento-border rounded-xl outline-none text-center font-bold"
-                      onChange={(e) => handleResponseChange(item.id, e.target.value)}
+                      className="w-full p-4 bg-bento-bg border border-bento-border rounded-xl outline-none text-center font-bold text-lg"
+                      onChange={(e) => handleResponseChange(item.id, item, e.target.value)}
                     />
-                    <span className="text-bento-muted font-bold">°C</span>
                   </div>
                 )}
 
-                {item.type === 'time' && (
-                  <div className="flex items-center gap-3">
-                    <div className="relative flex-1 max-w-[160px]">
-                      <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-bento-muted" size={16} />
-                      <input 
-                        type="time" 
-                        className="w-full pl-10 pr-4 py-2 bg-bento-bg border border-bento-border rounded-xl outline-none font-bold"
-                        onChange={(e) => handleResponseChange(item.id, e.target.value)}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {item.requiredPhoto && (
+                {item.type === 'photo' && (
                   <div className="pt-2">
                     <PhotoCapture onCapture={(url) => handlePhotoCapture(item.id, url)} />
                   </div>
                 )}
+                
+                {item.type === 'text' && (
+                  <textarea 
+                    placeholder="Observações..."
+                    className="w-full p-3 bg-bento-bg border border-bento-border rounded-xl text-sm"
+                    onChange={(e) => handleResponseChange(item.id, item, e.target.value)}
+                  />
+                )}
+
+                <AnimatePresence>
+                  {responses[item.id]?.isConform === false && (
+                    <motion.div 
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="bg-red-50 p-4 rounded-xl border border-red-100 space-y-2 mt-2">
+                        <div className="flex items-center gap-2 text-red-600">
+                          <ShieldAlert size={16} />
+                          <p className="text-[11px] font-bold uppercase">Não-Conformidade Detectada</p>
+                        </div>
+                        <p className="text-xs text-red-500 font-medium">{responses[item.id]?.message || 'O valor informado está fora do padrão.'}</p>
+                        <textarea 
+                          placeholder="Descreva o plano de ação imediato..."
+                          className="w-full p-2 bg-white border border-red-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-red-400"
+                          value={responses[item.id]?.action_plan || ''}
+                          onChange={(e) => handleActionPlanChange(item.id, e.target.value)}
+                          required
+                        />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </motion.div>
           ))}

@@ -1,15 +1,25 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { auth, db } from './firebase';
-import { handleFirestoreError, OperationType } from './lib/firestoreErrorHandler';
+import { dataService } from './services/dataService';
+
+interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: 'admin' | 'manager' | 'staff';
+  isApproved: boolean;
+  createdAt: string;
+  organization_id: string;
+  assignedChecklistIds?: string[];
+}
 
 interface AuthContextType {
-  user: User | null;
-  profile: any | null;
+  user: any | null;
+  profile: UserProfile | null;
   loading: boolean;
   isAdmin: boolean;
   isApproved: boolean;
+  login: (email: string, name: string) => void;
+  logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -18,60 +28,61 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   isAdmin: false,
   isApproved: false,
+  login: () => {},
+  logout: () => {},
 });
 
+const DEFAULT_ORG_ID = 'azura-main-org';
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<any | null>(null);
+  const [user, setUser] = useState<any | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        // Use onSnapshot for reactive profile updates (e.g., when admin assigns new checklists)
-        const unsubProfile = onSnapshot(doc(db, 'users', firebaseUser.uid), async (userDoc) => {
-          try {
-            if (userDoc.exists()) {
-              const data = userDoc.data();
-              // Ensure specific email always has admin role and is approved
-              if (firebaseUser.email === 'santiago02061992@gmail.com' && (data.role !== 'admin' || data.isApproved !== true)) {
-                const updatedProfile = { ...data, role: 'admin', isApproved: true };
-                await setDoc(doc(db, 'users', firebaseUser.uid), updatedProfile);
-                setProfile(updatedProfile);
-              } else {
-                setProfile(data);
-              }
-            } else {
-              // Create default profile for new users
-              const isAdminEmail = firebaseUser.email === 'santiago02061992@gmail.com';
-              const newProfile = {
-                uid: firebaseUser.uid,
-                email: firebaseUser.email,
-                displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Usuário',
-                role: isAdminEmail ? 'admin' : 'staff',
-                isApproved: isAdminEmail, // Admin is auto-approved
-                createdAt: new Date().toISOString(),
-                assignedChecklistIds: []
-              };
-              await setDoc(doc(db, 'users', firebaseUser.uid), newProfile);
-              setProfile(newProfile);
-            }
-          } catch (error) {
-            handleFirestoreError(error, OperationType.GET, `users/${firebaseUser.uid}`);
-          }
-          setLoading(false);
-        });
-
-        return () => unsubProfile();
-      } else {
-        setProfile(null);
-        setLoading(false);
-      }
-    });
-
-    return () => unsubscribe();
+    const savedUser = localStorage.getItem('gastrocheck_current_user');
+    if (savedUser) {
+      const userData = JSON.parse(savedUser);
+      setUser(userData);
+      const profiles = dataService.getProfiles(DEFAULT_ORG_ID);
+      const userProfile = profiles.find((p: any) => p.uid === userData.uid);
+      setProfile(userProfile || null);
+    }
+    setLoading(false);
   }, []);
+
+  const login = (email: string, name: string) => {
+    const uid = btoa(email); 
+    const profiles = dataService.getProfiles(DEFAULT_ORG_ID);
+    const existingProfile = profiles.find((p: any) => p.uid === uid);
+    
+    const isAdminEmail = email === 'santiago02061992@gmail.com';
+    const newProfile: UserProfile = existingProfile || {
+      uid,
+      email,
+      displayName: name || email.split('@')[0],
+      role: isAdminEmail ? 'admin' : 'staff',
+      isApproved: isAdminEmail,
+      createdAt: new Date().toISOString(),
+      organization_id: DEFAULT_ORG_ID,
+      assignedChecklistIds: []
+    };
+
+    if (!existingProfile) {
+      dataService.saveProfile(newProfile);
+    }
+
+    const userData = { uid, email, displayName: name };
+    localStorage.setItem('gastrocheck_current_user', JSON.stringify(userData));
+    setUser(userData);
+    setProfile(newProfile);
+  };
+
+  const logout = () => {
+    localStorage.removeItem('gastrocheck_current_user');
+    setUser(null);
+    setProfile(null);
+  };
 
   const value = {
     user,
@@ -79,6 +90,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loading,
     isAdmin: profile?.role === 'admin' || user?.email === 'santiago02061992@gmail.com',
     isApproved: profile?.isApproved === true || user?.email === 'santiago02061992@gmail.com',
+    login,
+    logout
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
